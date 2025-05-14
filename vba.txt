@@ -1,0 +1,77 @@
+Sub SplitByMaturityMonth_CleanVersion()
+    On Error GoTo ErrHandler
+
+    Dim wsSrc As Worksheet
+    Dim wbNew As Workbook
+    Dim dict As Object
+    Dim lastRow As Long
+    Dim maturityDate As Date
+    Dim maturityKey As String
+    Dim colIndex As Long
+    Dim i As Long
+    Dim newSheet As Worksheet
+    Dim pasteRow As Long
+
+    ' Dictionary to hold month sheets
+    Set dict = CreateObject("Scripting.Dictionary")
+    Set wsSrc = ActiveWorkbook.Sheets(1)
+
+    ' Find "Maturity Date" column
+    For colIndex = 1 To wsSrc.Cells(1, wsSrc.Columns.Count).End(xlToLeft).Column
+        If Trim(wsSrc.Cells(1, colIndex).Value) = "Maturity Date" Then Exit For
+    Next colIndex
+
+    If colIndex > wsSrc.Columns.Count Then
+        MsgBox "'Maturity Date' column not found.", vbCritical
+        Exit Sub
+    End If
+
+    ' Get last row of data
+    lastRow = wsSrc.Cells(wsSrc.Rows.Count, colIndex).End(xlUp).Row
+
+    ' Create new workbook
+    Set wbNew = Workbooks.Add(xlWBATWorksheet)
+    Application.DisplayAlerts = False
+
+    ' Only delete additional sheets, keep one to reuse
+    Do While wbNew.Sheets.Count > 1
+        wbNew.Sheets(2).Delete
+    Loop
+
+    Application.DisplayAlerts = True
+
+    ' Loop through data rows
+    For i = 2 To lastRow
+        If IsDate(wsSrc.Cells(i, colIndex).Value) Then
+            maturityDate = CDate(wsSrc.Cells(i, colIndex).Value)
+            maturityKey = Format(maturityDate, "yyyy-mm") ' e.g., 2025-06
+
+            If Not dict.exists(maturityKey) Then
+                If dict.Count = 0 Then
+                    ' Reuse first sheet
+                    Set newSheet = wbNew.Sheets(1)
+                    newSheet.Name = maturityKey
+                Else
+                    Set newSheet = wbNew.Sheets.Add(After:=wbNew.Sheets(wbNew.Sheets.Count))
+                    newSheet.Name = maturityKey
+                End If
+
+                ' Copy headers
+                wsSrc.Rows(1).Copy Destination:=newSheet.Rows(1)
+                dict.Add maturityKey, newSheet
+            End If
+
+            ' Paste data row to correct sheet
+            Set newSheet = dict(maturityKey)
+            pasteRow = newSheet.Cells(newSheet.Rows.Count, 1).End(xlUp).Row + 1
+            wsSrc.Rows(i).Copy Destination:=newSheet.Rows(pasteRow)
+        End If
+    Next i
+
+    wbNew.Activate
+    MsgBox "Workbook created with one tab per maturity month (e.g., '2025-06').", vbInformation
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error: " & Err.Description & " at row " & i, vbCritical
+End Sub
