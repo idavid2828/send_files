@@ -1,0 +1,103 @@
+Sub SplitAndSaveMaturities()
+    On Error GoTo ErrHandler
+
+    Dim wsSrc As Worksheet
+    Dim wbNew As Workbook
+    Dim dict As Object
+    Dim colIndex As Long, lastRow As Long, lastCol As Long
+    Dim i As Long
+    Dim maturityDate As Date
+    Dim maturityKey As String
+    Dim data(), headers()
+    Dim sheetData As Object
+    Dim monthKey As Variant
+    Dim outputRow As Long
+    Dim todayStr As String
+
+    Set wsSrc = ActiveWorkbook.Sheets(1)
+    Set dict = CreateObject("Scripting.Dictionary")
+    todayStr = Format(Date, "yyyy-mm-dd")
+
+    ' Find column with header "Maturity Date"
+    lastCol = wsSrc.Cells(1, wsSrc.Columns.Count).End(xlToLeft).Column
+    For colIndex = 1 To lastCol
+        If Trim(wsSrc.Cells(1, colIndex).Value) = "maturity_date" Then Exit For
+    Next colIndex
+    If colIndex > lastCol Then
+        MsgBox "'Maturity Date' column not found.", vbCritical
+        Exit Sub
+    End If
+
+    ' Load all data into memory
+    lastRow = wsSrc.Cells(wsSrc.Rows.Count, colIndex).End(xlUp).Row
+    lastCol = wsSrc.Cells(1, wsSrc.Columns.Count).End(xlToLeft).Column
+    data = wsSrc.Range(wsSrc.Cells(1, 1), wsSrc.Cells(lastRow, lastCol)).Value
+    headers = Application.Index(data, 1, 0)
+
+    ' Organize data by maturity month
+    For i = 2 To UBound(data, 1)
+        If IsDate(data(i, colIndex)) Then
+            maturityDate = CDate(data(i, colIndex))
+            maturityKey = Format(maturityDate, "mmmm yyyy") ' e.g., May 2025
+
+            If Not dict.exists(maturityKey) Then
+                Set sheetData = CreateObject("Scripting.Dictionary")
+                sheetData.Add "rows", Array()
+                dict.Add maturityKey, sheetData
+            End If
+
+            Dim curRows: curRows = dict(maturityKey)("rows")
+            ReDim Preserve curRows(UBound(curRows) + 1)
+            curRows(UBound(curRows)) = Application.Index(data, i, 0)
+            dict(maturityKey)("rows") = curRows
+        End If
+    Next i
+
+    ' Create new workbook and prepare sheets
+    Set wbNew = Workbooks.Add(xlWBATWorksheet)
+    Application.DisplayAlerts = False
+    Do While wbNew.Sheets.Count > 1
+        wbNew.Sheets(2).Delete
+    Loop
+    Application.DisplayAlerts = True
+
+    Dim wsAll As Worksheet
+    Set wsAll = wbNew.Sheets(1)
+    wsAll.Name = "All Data"
+
+    ' Write all data to first sheet
+    wsAll.Range(wsAll.Cells(1, 1), wsAll.Cells(1, lastCol)).Value = headers
+    For i = 2 To UBound(data, 1)
+        wsAll.Range(wsAll.Cells(i, 1), wsAll.Cells(i, lastCol)).Value = Application.Index(data, i, 0)
+    Next i
+
+    ' Create monthly sheets
+    Dim wsOut As Worksheet
+    For Each monthKey In dict.Keys
+        Set wsOut = wbNew.Sheets.Add(After:=wbNew.Sheets(wbNew.Sheets.Count))
+        wsOut.Name = monthKey
+
+        wsOut.Range(wsOut.Cells(1, 1), wsOut.Cells(1, lastCol)).Value = headers
+
+        Dim monthRows: monthRows = dict(monthKey)("rows")
+        For i = 0 To UBound(monthRows)
+            wsOut.Range(wsOut.Cells(i + 2, 1), wsOut.Cells(i + 2, lastCol)).Value = monthRows(i)
+        Next i
+    Next monthKey
+
+    ' Save new workbook
+    Dim filePath As String
+    filePath = Application.ThisWorkbook.Path & "\Outbound Calls MI " & todayStr & ".xlsx"
+    wbNew.SaveAs Filename:=filePath, FileFormat:=xlOpenXMLWorkbook
+    wbNew.Activate
+
+    ' Clear original sheet
+    wsSrc.UsedRange.ClearContents
+
+    MsgBox "New workbook created and saved as:" & vbCrLf & filePath, vbInformation
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error: " & Err.Description, vbCritical
+End Sub
+
