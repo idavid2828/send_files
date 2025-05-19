@@ -1,0 +1,29 @@
+import os
+import boto3
+
+# Configuration
+local_folder = '/path/to/your/folder'  # e.g. '/home/ec2-user/SageMaker/data'
+bucket_name = 'your-s3-bucket-name'
+jis_prefix = 'uploads/jis/'
+savings_prefix = 'uploads/savings/'
+
+# Set up S3 client
+s3 = boto3.client('s3')
+
+# Iterate over files in the folder
+for filename in os.listdir(local_folder):
+    if not os.path.isfile(os.path.join(local_folder, filename)):
+        continue  # skip subdirectories or invalid files
+
+    # Decide the S3 path based on filename
+    if 'JIS' in filename.upper():
+        s3_path = jis_prefix + filename
+    elif 'SAVINGS' in filename.upper():
+        s3_path = savings_prefix + filename
+    else:
+        continue  # skip files that don't match
+
+    # Upload the file
+    local_path = os.path.join(local_folder, filename)
+    print(f"Uploading {filename} to s3://{bucket_name}/{s3_path}")
+    s3.upload_file(local_path, bucket_name, s3_path)
